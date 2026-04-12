@@ -1,0 +1,5 @@
+test_suite:
+  name: "API测试套件"
+  test_cases:
+    - path: "tests/test_cases/login_test.yaml"
+      data: "data/csv/login_test_data.csv"

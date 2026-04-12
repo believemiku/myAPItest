@@ -1,0 +1,29 @@
+test_case:
+  name: "用户登录测试"
+  markers: ["smoke"]
+  steps:
+    - keyword: "send_request"
+      params:
+        method: "POST"
+        url: "https://jsonplaceholder.typicode.com/posts"
+        headers:
+          Content-Type: "application/json"
+        json:
+          title: "${title}"
+          body: "${body}"
+          userId: ${userId}
+    - keyword: "assert_status_code"
+      params:
+        expected_status_code: 201
+    - keyword: "assert_json_path"
+      params:
+        json_path: "$.title"
+        expected_value: "${title}"
+    - keyword: "assert_json_path"
+      params:
+        json_path: "$.body"
+        expected_value: "${body}"
+    - keyword: "assert_json_path"
+      params:
+        json_path: "$.userId"
+        expected_value: ${userId}
