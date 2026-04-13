@@ -1,99 +1,114 @@
-import json
 import time
-from datetime import datetime
-
-import yaml
-
-from core.data import DataManager
-from core.keyword import KeywordManager
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Any
 from utils.logger import logger
+from core.config import ConfigManager
+from core.keyword import KeywordManager
+from core.data import DataManager
+from core.loader import TestCaseLoader
+from core.variables import VariableManager
+
+
+@dataclass
+class TestStep:
+    """测试步骤"""
+    keyword: str
+    params: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class TestCase:
+    """测试用例"""
+    name: str
+    steps: List[TestStep] = field(default_factory=list)
+    markers: List[str] = field(default_factory=list)
+
+
+@dataclass
+class TestCaseWrapper:
+    """测试用例包装器"""
+    test_case: TestCase
 
 
 class TestEngine:
-    def __init__(self, config=None):
-        self.config = config or {}
-        self.keyword_manager = KeywordManager()
-        self.data_manager = DataManager()
-        self.variables = {}
-
-    def load_test_case(self, test_case_path):
-        """加载测试用例文件"""
-        if test_case_path.endswith('.yaml') or test_case_path.endswith('.yml'):
-            with open(test_case_path, 'r', encoding='utf-8') as f:
-                return yaml.safe_load(f)
-        elif test_case_path.endswith('.json'):
-            with open(test_case_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        else:
-            raise Exception(f"不支持的测试用例文件格式: {test_case_path}")
-
-    def load_test_data(self, data_path):
-        """加载测试数据"""
-        return self.data_manager.load_data(data_path)
-
-    def run_test_case(self, test_case, test_data=None):
+    """测试引擎"""
+    
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """初始化测试引擎"""
+        self.config: Dict[str, Any] = config or {}
+        self.config_manager: ConfigManager = ConfigManager()
+        self.keyword_manager: KeywordManager = KeywordManager()
+        self.data_manager: DataManager = DataManager()
+        self.test_case_loader: TestCaseLoader = TestCaseLoader()
+        self.variable_manager: VariableManager = VariableManager()
+        # 将环境配置添加到变量中
+        self._load_env_variables()
+    
+    def _load_env_variables(self) -> None:
+        """加载环境变量到变量管理器"""
+        env_config = self.config_manager.get_env_config()
+        if env_config:
+            self.variable_manager.update({f"env.{k}": v for k, v in env_config.items()})
+            logger.info(f"已加载环境变量: {list(env_config.keys())}")
+    
+    def run_test_case(self, test_case: Dict[str, Any], test_data: Optional[Dict[str, Any]] = None) -> None:
         """运行单个测试用例"""
-        self.variables.clear()
-        test_name = test_case.get('test_case', {}).get('name', 'Unnamed Test')
-        steps = test_case.get('test_case', {}).get('steps', [])
-
-        logger.info(f"开始执行测试用例: {test_name}")
+        # 清空变量
+        self.variable_manager.clear()
+        # 重新加载环境变量
+        self._load_env_variables()
+        
+        # 获取测试用例信息
+        test_case_dict = test_case.get('test_case', {})
+        test_name = test_case_dict.get('name', 'Unnamed Test')
+        steps_data = test_case_dict.get('steps', [])
+        
+        # 转换为TestStep对象
+        steps = []
+        for step_data in steps_data:
+            step = TestStep(
+                keyword=step_data.get('keyword'),
+                params=step_data.get('params', {})
+            )
+            steps.append(step)
+        
+        test_case_obj = TestCase(name=test_name, steps=steps)
+        
+        logger.info(f"开始执行测试用例: {test_case_obj.name}")
         start_time = time.time()
-
+        
         # 处理测试数据
         if test_data:
-            logger.warning(f"使用测试数据: {test_data}")
-            self.variables.update(test_data)
-
-        for step in steps:
-            keyword = step.get('keyword')
-            params = step.get('params', {})
-
+            logger.info(f"使用测试数据: {test_data}")
+            self.variable_manager.update(test_data)
+        
+        # 执行测试步骤
+        for step in test_case_obj.steps:
             # 替换参数中的变量
-            processed_params = self._process_params(params)
-
-            logger.info(f"执行步骤: {keyword} 参数:{processed_params}")
+            processed_params = self.variable_manager.process_params(step.params)
+            
+            logger.info(f"执行步骤: {step.keyword} 参数:{processed_params}")
             try:
-                result = self.keyword_manager.execute(keyword, processed_params, self)
+                result = self.keyword_manager.execute(step.keyword, processed_params, self)
             except Exception as e:
-                logger.error(f"步骤执行失败: {keyword}, 错误: {str(e)}")
-                raise AssertionError(f"步骤执行失败: {keyword}, 错误: {str(e)}")
-
+                logger.error(f"步骤执行失败: {step.keyword}, 错误: {str(e)}")
+                raise AssertionError(f"步骤执行失败: {step.keyword}, 错误: {str(e)}")
+        
         end_time = time.time()
         execution_time = end_time - start_time
-
-        logger.info(f"测试用例执行完成: {test_name}, 结果: PASS, 执行时间: {execution_time:.2f}s")
-
-    def _process_params(self, params):
-        """处理参数中的变量"""
-        return self._process_value(params)
-
-    def _process_value(self, value):
-        """处理单个值中的变量"""
-        if isinstance(value, dict):
-            logger.info(f"处理参数: {value}")
-            return {k: self._process_value(v) for k, v in value.items()}
-        elif isinstance(value, list):
-            logger.info(f"处理参数列表: {value}")
-            return [self._process_value(item) for item in value]
-        elif isinstance(value, str) and '${' in value and '}' in value:
-            logger.info(f"处理变量引用: {value}")
-            # 处理变量引用
-            for var_name, var_value in self.variables.items():
-                placeholder = f"${{{var_name}}}"
-                if placeholder in value:
-                    value = value.replace(placeholder, str(var_value))
-            # 处理特殊变量
-            if '${response' in value:
-                # 这里可以扩展处理response相关的变量
-                pass
-        return value
-
-    def set_variable(self, name, value):
+        
+        logger.info(f"测试用例执行完成: {test_case_obj.name}, 结果: PASS, 执行时间: {execution_time:.2f}s")
+    
+    def set_variable(self, name: str, value: Any) -> None:
         """设置变量"""
-        self.variables[name] = value
-        logger.info(f"设置变量: {name} = {value}")
-
-    def get_variable(self, name):
+        self.variable_manager.set(name, value)
+    
+    def get_variable(self, name: str) -> Any:
         """获取变量"""
-        return self.variables.get(name)
+        return self.variable_manager.get(name)
+    
+    def set_env(self, env: str) -> None:
+        """设置环境"""
+        self.config_manager.set_env(env)
+        # 重新加载环境变量
+        self._load_env_variables()

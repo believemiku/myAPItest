@@ -5,7 +5,7 @@ test_case:
     - keyword: "send_request"
       params:
         method: "POST"
-        url: "https://jsonplaceholder.typicode.com/posts"
+        url: "${env.base_url}/posts"
         headers:
           Content-Type: "application/json"
         json:
