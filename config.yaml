@@ -1,0 +1,27 @@
+# 环境配置文件
+
+# 全局配置
+global:
+  timeout: 30
+  retry_count: 3
+
+# 开发环境
+dev:
+  base_url: "https://jsonplaceholder.typicode.com"
+  api_key: "dev_api_key"
+  username: "dev_user"
+  password: "dev_pass"
+
+# 测试环境
+test:
+  base_url: "https://jsonplaceholder.typicode.com"
+  api_key: "test_api_key"
+  username: "test_user"
+  password: "test_pass"
+
+# 生产环境
+prod:
+  base_url: "https://jsonplaceholder.typicode.com"
+  api_key: "prod_api_key"
+  username: "prod_user"
+  password: "prod_pass"
